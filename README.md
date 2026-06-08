@@ -1,6 +1,10 @@
 # Cloudflare Node Switch
 
+[English](README.md) | [中文](README_CN.md)
+
 A macOS SwiftUI application for managing VLESS subscription nodes with intelligent latency-based auto-selection.
+
+![Screenshot](docs/screenshot.png)
 
 ## Features
 

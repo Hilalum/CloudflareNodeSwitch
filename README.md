@@ -1,8 +1,6 @@
 # Cloudflare Node Switch
 
-[English](README.md) | [中文](README_CN.md)
-
-A macOS SwiftUI application for managing VLESS subscription nodes with intelligent latency-based auto-selection.
+A macOS SwiftUI application for intelligent network node management with automatic latency-based selection.
 
 ![Screenshot](docs/screenshot.png)
 
@@ -16,13 +14,13 @@ The core feature is **automatic node optimization** — the app continuously tes
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌──────────────┐     ┌──────────────┐     ┌───────────────┐       │
-│  │ Subscription  │────▶│  Parse VLESS │────▶│  Node Pool    │       │
-│  │     URL       │     │    Links     │     │  (N nodes)    │       │
+│  │   Remote     │────▶│   Parse &    │────▶│  Node Pool    │       │
+│  │   Config     │     │   Decode     │     │  (N nodes)    │       │
 │  └──────────────┘     └──────────────┘     └───────┬───────┘       │
 │                                                     │               │
 │                                                     ▼               │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │                     sing-box urltest                         │    │
+│  │                   Latency Auto-Test                         │    │
 │  │                                                              │    │
 │  │  ┌────────┐  ┌────────┐  ┌────────┐         ┌────────┐     │    │
 │  │  │ Node 1 │  │ Node 2 │  │ Node 3 │   ···   │ Node N │     │    │
@@ -40,11 +38,11 @@ The core feature is **automatic node optimization** — the app continuously tes
 │                            ▼                                            │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                    127.0.0.1:7890                                │    │
-│  │              Mixed HTTP / SOCKS5 Proxy                           │    │
+│  │                   Local Network Gateway                         │    │
 │  └─────────────────────────┬───────────────────────────────────────┘    │
 │                            ▼                                            │
 │                ┌───────────────────┐                                    │
-│                │    System Proxy   │                                    │
+│                │    System Network │                                    │
 │                │    + Developer    │                                    │
 │                │    Terminals      │                                    │
 │                └───────────────────┘                                    │
@@ -53,27 +51,27 @@ The core feature is **automatic node optimization** — the app continuously tes
 
 ### Selection Algorithm
 
-1. **Fetch Subscription** — Decode Base64 subscription response containing `vless://` links
-2. **Build Node Pool** — Parse all available Cloudflare edge nodes from the subscription
+1. **Fetch Config** — Retrieve and decode remote configuration data
+2. **Build Node Pool** — Parse all available Cloudflare edge nodes
 3. **Latency Testing** — TCP handshake to measure real connection time for each node
-4. **Auto Selection** — sing-box `urltest` continuously monitors and picks the fastest node
+4. **Auto Selection** — Continuously monitors and picks the fastest node
 5. **Failover** — If the current node fails, automatically switches to the next best option
-6. **Real-time Monitoring** — Clash API tracks the active node, UI updates every 3 seconds
+6. **Real-time Monitoring** — Tracks the active node, UI updates every 3 seconds
 
 ### Why This Works Well for Cloudflare
 
 - **Edge Network** — Cloudflare has 300+ edge locations worldwide
 - **Random Assignment** — Nodes are dynamically assigned, latency varies by time of day
-- **Continuous Testing** — urltest runs every minute with 50ms tolerance threshold
+- **Continuous Testing** — Auto-test runs every minute with 50ms tolerance threshold
 - **Smart Routing** — Picks the optimal node based on your actual network conditions
 
 ## Features
 
-- **VLESS Subscription Management**: Parse and manage VLESS subscription links
-- **Intelligent Node Selection**: Automatic latency-based node selection using sing-box's urltest
+- **Node Management**: Parse and manage network node configurations
+- **Intelligent Selection**: Automatic latency-based node selection
 - **Real-time Latency Testing**: TCP latency measurement for quick node sorting
-- **System Integration**: Seamless macOS system proxy configuration
-- **Developer Tools**: Proxy-aware terminal integration for development workflows
+- **System Integration**: Seamless macOS network configuration
+- **Developer Tools**: Network-aware terminal integration for development workflows
 - **Clean UI**: Native SwiftUI interface with sidebar node list and detailed configuration
 
 ## Requirements
@@ -108,24 +106,24 @@ open "$HOME/Applications/Cloudflare Node Switch.app"
 ## Usage
 
 1. Launch the application
-2. Paste your VLESS subscription URL in the settings panel
+2. Paste your configuration URL in the settings panel
 3. Click "Refresh" to load available nodes
-4. Click "Start" to launch the proxy service
-5. Enable system proxy integration for automatic configuration
+4. Click "Start" to launch the service
+5. Enable system network integration for automatic configuration
 
 ### Keyboard Shortcuts
 
-- `Cmd+R`: Refresh subscription
-- `Cmd+Shift+S`: Start/Stop proxy
-- `Space`: Start/Stop proxy (when window is focused)
+- `Cmd+R`: Refresh configuration
+- `Cmd+Shift+S`: Start/Stop service
+- `Space`: Start/Stop service (when window is focused)
 
 ### Developer Integration
 
-The application provides proxy-aware terminal integration for development tools:
+The application provides network-aware terminal integration for development tools:
 
-- **Terminal**: Open a new terminal with proxy environment variables
-- **Codex**: Launch Codex with proxy configuration
-- **Claude**: Launch Claude Code with proxy settings
+- **Terminal**: Open a new terminal with network environment variables
+- **Codex**: Launch Codex with network configuration
+- **Claude**: Launch Claude Code with network settings
 
 ## Configuration
 
@@ -135,10 +133,10 @@ Generated configuration and logs are stored in:
 ~/Library/Application Support/CloudflareNodeSwitch/
 ```
 
-### Proxy Settings
+### Network Settings
 
 - **Default Port**: 7890 (configurable)
-- **Protocol**: Mixed HTTP/HTTPS/SOCKS5 proxy
+- **Protocol**: Mixed HTTP/HTTPS/SOCKS5
 - **Auto-detection**: Interface auto-detection enabled
 
 ### Node Selection Modes
@@ -152,15 +150,15 @@ The application follows a clean MVVM architecture:
 
 - **AppState**: Central state management with Combine publishers
 - **Views**: SwiftUI components for the user interface
-- **Services**: Business logic for subscription parsing, config generation, and system integration
-- **Models**: Data structures for proxy nodes and configuration
+- **Services**: Business logic for config parsing, generation, and system integration
+- **Models**: Data structures for nodes and configuration
 
 ### Key Components
 
-- `SubscriptionService`: Fetches and parses VLESS subscription data
-- `SingBoxConfigBuilder`: Generates sing-box configuration from nodes
-- `SystemProxyManager`: Manages macOS system proxy settings
-- `DeveloperProxyManager`: Handles terminal proxy integration
+- `SubscriptionService`: Fetches and parses remote configuration data
+- `SingBoxConfigBuilder`: Generates configuration from nodes
+- `SystemProxyManager`: Manages macOS network settings
+- `DeveloperProxyManager`: Handles terminal network integration
 
 ## Development
 
@@ -207,6 +205,5 @@ This software is provided "as is", without warranty of any kind. The author is n
 
 ## Acknowledgments
 
-- [sing-box](https://sing-box.sagernet.org/) - The universal proxy platform
-- [VLESS Protocol](https://www.v2fly.org/en_US/v5/config/transport/vless.html) - The proxy protocol implementation
+- [sing-box](https://sing-box.sagernet.org/) - The universal network toolkit
 - SwiftUI - Apple's declarative UI framework

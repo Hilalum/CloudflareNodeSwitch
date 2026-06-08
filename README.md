@@ -6,6 +6,67 @@ A macOS SwiftUI application for managing VLESS subscription nodes with intellige
 
 ![Screenshot](docs/screenshot.png)
 
+## How It Works — Auto Selection Flow
+
+The core feature is **automatic node optimization** — the app continuously tests all available Cloudflare edge nodes and routes your traffic through the fastest one in real-time.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Cloudflare Node Switch                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐     ┌──────────────┐     ┌───────────────┐       │
+│  │ Subscription  │────▶│  Parse VLESS │────▶│  Node Pool    │       │
+│  │     URL       │     │    Links     │     │  (N nodes)    │       │
+│  └──────────────┘     └──────────────┘     └───────┬───────┘       │
+│                                                     │               │
+│                                                     ▼               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                     sing-box urltest                         │    │
+│  │                                                              │    │
+│  │  ┌────────┐  ┌────────┐  ┌────────┐         ┌────────┐     │    │
+│  │  │ Node 1 │  │ Node 2 │  │ Node 3 │   ···   │ Node N │     │    │
+│  │  │  55ms  │  │ 120ms  │  │  89ms  │         │ 200ms  │     │    │
+│  │  │   ✓    │  │        │  │        │         │        │     │    │
+│  │  └───┬────┘  └────────┘  └────────┘         └────────┘     │    │
+│  │      │                                                      │    │
+│  │      └──────────────────┬───────────────────────────────────┘    │
+│  │                         ▼                                        │    │
+│  │                 ┌───────────────┐                                │    │
+│  │                 │   Pick Best   │◀── TCP latency test (1 min)   │    │
+│  │                 │    Node       │◀── tolerance: 50ms            │    │
+│  │                 └───────┬───────┘                                │    │
+│  └─────────────────────────┼───────────────────────────────────────┘    │
+│                            ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │                    127.0.0.1:7890                                │    │
+│  │              Mixed HTTP / SOCKS5 Proxy                           │    │
+│  └─────────────────────────┬───────────────────────────────────────┘    │
+│                            ▼                                            │
+│                ┌───────────────────┐                                    │
+│                │    System Proxy   │                                    │
+│                │    + Developer    │                                    │
+│                │    Terminals      │                                    │
+│                └───────────────────┘                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Selection Algorithm
+
+1. **Fetch Subscription** — Decode Base64 subscription response containing `vless://` links
+2. **Build Node Pool** — Parse all available Cloudflare edge nodes from the subscription
+3. **Latency Testing** — TCP handshake to measure real connection time for each node
+4. **Auto Selection** — sing-box `urltest` continuously monitors and picks the fastest node
+5. **Failover** — If the current node fails, automatically switches to the next best option
+6. **Real-time Monitoring** — Clash API tracks the active node, UI updates every 3 seconds
+
+### Why This Works Well for Cloudflare
+
+- **Edge Network** — Cloudflare has 300+ edge locations worldwide
+- **Random Assignment** — Nodes are dynamically assigned, latency varies by time of day
+- **Continuous Testing** — urltest runs every minute with 50ms tolerance threshold
+- **Smart Routing** — Picks the optimal node based on your actual network conditions
+
 ## Features
 
 - **VLESS Subscription Management**: Parse and manage VLESS subscription links

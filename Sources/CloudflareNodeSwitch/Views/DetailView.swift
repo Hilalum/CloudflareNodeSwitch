@@ -171,6 +171,22 @@ private struct SettingsPanel: View {
                         .labelsHidden()
                 }
 
+                SettingRow(label: "Routing") {
+                    Picker("Routing", selection: $state.routingMode) {
+                        ForEach(RoutingMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 142, alignment: .leading)
+
+                    Text(state.routingMode.detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
                 SettingRow(label: "Integration") {
                     Toggle(isOn: Binding(
                         get: { state.isProxyRunning ? state.isIntegratedProxyEnabled : state.shouldAutoEnableIntegration },

@@ -16,6 +16,12 @@ final class AppState: ObservableObject {
     @Published var nodes: [ProxyNode] = []
     @Published var latencies: [UUID: NodeLatency] = [:]
     @Published var mode: ProxyMode = .auto
+    @Published var routingMode: RoutingMode {
+        didSet {
+            defaults.set(routingMode.rawValue, forKey: Keys.routingMode)
+            restartIfRunning()
+        }
+    }
     @Published var isRefreshing = false
     @Published var isTesting = false
     @Published var isSystemProxyEnabled = false
@@ -43,6 +49,8 @@ final class AppState: ObservableObject {
         singBoxPath = defaults.string(forKey: Keys.singBoxPath) ?? ""
         let storedPort = defaults.integer(forKey: Keys.localPort)
         localPort = storedPort == 0 ? 7890 : storedPort
+        let storedRouting = defaults.string(forKey: Keys.routingMode) ?? RoutingMode.aiStable.rawValue
+        routingMode = RoutingMode(rawValue: storedRouting) ?? .aiStable
         if defaults.object(forKey: Keys.autoEnableIntegration) == nil {
             shouldAutoEnableIntegration = true
             defaults.set(true, forKey: Keys.autoEnableIntegration)
@@ -208,7 +216,7 @@ final class AppState: ObservableObject {
             return
         }
 
-        let data = try SingBoxConfigBuilder(localPort: localPort).build(nodes: nodes, mode: mode)
+        let data = try SingBoxConfigBuilder(localPort: localPort).build(nodes: nodes, mode: mode, routingMode: routingMode)
         try data.write(to: AppPaths.singBoxConfigURL, options: .atomic)
         singBoxManager.start(configURL: AppPaths.singBoxConfigURL, executablePath: singBoxPath)
         if singBoxManager.isRunning {
@@ -436,5 +444,6 @@ final class AppState: ObservableObject {
         static let singBoxPath = "singBoxPath"
         static let localPort = "localPort"
         static let autoEnableIntegration = "autoEnableIntegration"
+        static let routingMode = "routingMode"
     }
 }

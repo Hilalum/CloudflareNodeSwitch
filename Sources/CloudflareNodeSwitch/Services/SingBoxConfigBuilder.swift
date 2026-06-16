@@ -18,10 +18,10 @@ struct SingBoxConfigBuilder {
     var localPort: Int
     var clashAPIPort: Int = 19090
     var testURL: String = "https://www.gstatic.com/generate_204"
-    var testInterval: String = "1m"
-    var tolerance: Int = 50
+    var testInterval: String = "3m"
+    var tolerance: Int = 150
 
-    func build(nodes: [ProxyNode], mode: ProxyMode) throws -> Data {
+    func build(nodes: [ProxyNode], mode: ProxyMode, routingMode: RoutingMode = .aiStable) throws -> Data {
         guard !nodes.isEmpty else {
             throw SingBoxConfigError.emptyNodeList
         }
@@ -56,9 +56,11 @@ struct SingBoxConfigBuilder {
                     type: "urltest",
                     tag: "auto",
                     outbounds: nodeTags,
-                    url: testURL,
-                    interval: testInterval,
-                    tolerance: tolerance
+                    url: urlTestURL(for: routingMode),
+                    interval: urlTestInterval(for: routingMode),
+                    tolerance: tolerance,
+                    idleTimeout: "30m",
+                    interruptExistConnections: false
                 )),
                 AnyEncodable(DirectOutbound(type: "direct", tag: "direct"))
             ] + zip(nodes, nodeTags).map { node, tag in
@@ -66,9 +68,7 @@ struct SingBoxConfigBuilder {
             },
             route: RouteConfig(
                 autoDetectInterface: true,
-                rules: [
-                    RouteRule(inbound: "mixed-in", action: "sniff")
-                ],
+                rules: routeRules(for: routingMode, proxyOutbound: finalTag),
                 final: finalTag
             )
         )
@@ -76,6 +76,93 @@ struct SingBoxConfigBuilder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(config)
+    }
+
+    private func urlTestURL(for routingMode: RoutingMode) -> String {
+        switch routingMode {
+        case .global, .smartCN:
+            return testURL
+        case .aiStable:
+            return "https://api.anthropic.com/v1/messages"
+        }
+    }
+
+    private func urlTestInterval(for routingMode: RoutingMode) -> String {
+        switch routingMode {
+        case .global, .smartCN:
+            return testInterval
+        case .aiStable:
+            return "5m"
+        }
+    }
+
+    private func routeRules(for routingMode: RoutingMode, proxyOutbound: String) -> [RouteRule] {
+        var rules: [RouteRule] = [
+            RouteRule(inbound: "mixed-in", action: "sniff"),
+            localDirectRule()
+        ]
+
+        switch routingMode {
+        case .global:
+            break
+        case .smartCN:
+            rules.append(cnDirectRule())
+        case .aiStable:
+            rules.append(aiProxyRule(outbound: proxyOutbound))
+            rules.append(cnDirectRule())
+        }
+
+        return rules
+    }
+
+    private func localDirectRule() -> RouteRule {
+        RouteRule(
+            domain: ["localhost"],
+            domainSuffix: ["local", "localhost"],
+            ipIsPrivate: true,
+            action: "route",
+            outbound: "direct"
+        )
+    }
+
+    private func cnDirectRule() -> RouteRule {
+        RouteRule(
+            domainSuffix: [
+                "cn", "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn",
+                "中国", "公司", "网络",
+                "baidu.com", "bdstatic.com", "bilibili.com", "biliapi.net",
+                "qq.com", "gtimg.com", "qpic.cn", "wechat.com", "weixin.qq.com",
+                "taobao.com", "tmall.com", "alicdn.com", "aliyun.com", "alipay.com",
+                "jd.com", "360buyimg.com", "douyin.com", "snssdk.com",
+                "163.com", "126.com", "sina.com.cn", "weibo.com",
+                "zhihu.com", "xiaohongshu.com", "meituan.com", "amap.com",
+                "mi.com", "xiaomi.com", "huawei.com", "bytedance.com"
+            ],
+            action: "route",
+            outbound: "direct"
+        )
+    }
+
+    private func aiProxyRule(outbound: String) -> RouteRule {
+        RouteRule(
+            domainSuffix: [
+                "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
+                "anthropic.com", "claude.ai",
+                "gemini.google.com", "bard.google.com", "aistudio.google.com",
+                "google.com", "google.com.hk", "google.com.tw", "google.co.jp",
+                "googleapis.com", "generativelanguage.googleapis.com",
+                "apis.google.com", "clients6.google.com", "ogs.google.com",
+                "gstatic.com", "ssl.gstatic.com", "googleusercontent.com",
+                "accounts.google.com", "withgoogle.com", "recaptcha.net",
+                "gvt1.com", "gvt2.com", "gvt3.com",
+                "doubleclick.net", "googletagmanager.com", "google-analytics.com",
+                "github.com", "githubusercontent.com", "githubassets.com",
+                "githubcopilot.com", "github.dev",
+                "npmjs.com", "registry.npmjs.org"
+            ],
+            action: "route",
+            outbound: outbound
+        )
     }
 
     private func buildVLESSOutbound(node: ProxyNode, tag: String) -> VLESSOutbound {
@@ -173,6 +260,19 @@ private struct UrlTestOutbound: Encodable {
     let url: String
     let interval: String
     let tolerance: Int
+    let idleTimeout: String
+    let interruptExistConnections: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case tag
+        case outbounds
+        case url
+        case interval
+        case tolerance
+        case idleTimeout = "idle_timeout"
+        case interruptExistConnections = "interrupt_exist_connections"
+    }
 }
 
 private struct VLESSOutbound: Encodable {
@@ -240,8 +340,41 @@ private struct RouteConfig: Encodable {
 }
 
 private struct RouteRule: Encodable {
-    let inbound: String
+    var inbound: String?
+    var domain: [String]?
+    var domainSuffix: [String]?
+    var domainKeyword: [String]?
+    var ipIsPrivate: Bool?
     let action: String
+    var outbound: String?
+
+    init(
+        inbound: String? = nil,
+        domain: [String]? = nil,
+        domainSuffix: [String]? = nil,
+        domainKeyword: [String]? = nil,
+        ipIsPrivate: Bool? = nil,
+        action: String,
+        outbound: String? = nil
+    ) {
+        self.inbound = inbound
+        self.domain = domain
+        self.domainSuffix = domainSuffix
+        self.domainKeyword = domainKeyword
+        self.ipIsPrivate = ipIsPrivate
+        self.action = action
+        self.outbound = outbound
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case inbound
+        case domain
+        case domainSuffix = "domain_suffix"
+        case domainKeyword = "domain_keyword"
+        case ipIsPrivate = "ip_is_private"
+        case action
+        case outbound
+    }
 }
 
 private struct AnyEncodable: Encodable {

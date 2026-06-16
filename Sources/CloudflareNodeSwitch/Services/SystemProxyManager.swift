@@ -1,12 +1,27 @@
 import Foundation
 
 struct SystemProxyManager {
+    private let bypassDomains = [
+        "127.0.0.1",
+        "localhost",
+        "<local>",
+        "*.local",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "169.254.0.0/16",
+        "::1",
+        "fc00::/7",
+        "fe80::/10"
+    ]
+
     func enable(host: String, port: Int) throws {
         let services = try networkServices()
         for service in services {
             try runNetworkSetup(["-setwebproxy", service, host, "\(port)"])
             try runNetworkSetup(["-setsecurewebproxy", service, host, "\(port)"])
             try runNetworkSetup(["-setsocksfirewallproxy", service, host, "\(port)"])
+            try runNetworkSetup(["-setproxybypassdomains", service] + bypassDomains)
             try runNetworkSetup(["-setwebproxystate", service, "on"])
             try runNetworkSetup(["-setsecurewebproxystate", service, "on"])
             try runNetworkSetup(["-setsocksfirewallproxystate", service, "on"])

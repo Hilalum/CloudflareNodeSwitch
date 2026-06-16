@@ -20,7 +20,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
             rawURL: "vless://example"
         )
 
-        let data = try SingBoxConfigBuilder(localPort: 7890).build(nodes: [node], mode: .auto)
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(nodes: [node], mode: .auto, routingMode: .aiStable)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
         XCTAssertEqual((object?["log"] as? [String: Any])?["level"] as? String, "warn")
@@ -38,10 +38,20 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         let rules = route?["rules"] as? [[String: Any]]
         XCTAssertEqual(rules?.first?["inbound"] as? String, "mixed-in")
         XCTAssertEqual(rules?.first?["action"] as? String, "sniff")
+        XCTAssertEqual(rules?[1]["ip_is_private"] as? Bool, true)
+        XCTAssertEqual(rules?[1]["action"] as? String, "route")
+        XCTAssertEqual(rules?[1]["outbound"] as? String, "direct")
+        XCTAssertEqual(rules?[2]["outbound"] as? String, "auto")
+        XCTAssertEqual(rules?[3]["outbound"] as? String, "direct")
 
         let outbounds = object?["outbounds"] as? [[String: Any]]
         XCTAssertEqual(outbounds?.first?["type"] as? String, "urltest")
         XCTAssertEqual(outbounds?.first?["tag"] as? String, "auto")
+        XCTAssertEqual(outbounds?.first?["url"] as? String, "https://api.anthropic.com/v1/messages")
+        XCTAssertEqual(outbounds?.first?["interval"] as? String, "5m")
+        XCTAssertEqual(outbounds?.first?["tolerance"] as? Int, 150)
+        XCTAssertEqual(outbounds?.first?["idle_timeout"] as? String, "30m")
+        XCTAssertEqual(outbounds?.first?["interrupt_exist_connections"] as? Bool, false)
 
         let vless = outbounds?.first { $0["type"] as? String == "vless" }
         XCTAssertEqual(vless?["server"] as? String, "104.16.157.214")

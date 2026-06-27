@@ -73,7 +73,7 @@ struct DeveloperProxyManager {
             throw NSError(
                 domain: "DeveloperProxyManager",
                 code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? "Failed to open Terminal." : message]
+                userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? LocalizedString.failedOpenTerminal : message]
             )
         }
     }
@@ -96,7 +96,7 @@ struct DeveloperProxyManager {
         guard let command, !command.isEmpty else {
             return """
             \(exports)
-            echo 'Cloudflare Node Switch proxy is active for this Terminal.'
+            echo '\(LocalizedString.proxyActiveInTerminal)'
             exec zsh
             """
         }
@@ -106,7 +106,7 @@ struct DeveloperProxyManager {
         if command -v \(command) >/dev/null 2>&1; then
           exec \(command)
         else
-          echo '\(command) was not found in PATH. Proxy variables are active in this Terminal.'
+          echo '\(String(format: LocalizedString.commandNotFoundProxyActive, command))'
           exec zsh
         fi
         """
@@ -176,7 +176,7 @@ struct DeveloperProxyManager {
             throw NSError(
                 domain: "DeveloperProxyManager",
                 code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? "launchctl failed." : message]
+                userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? LocalizedString.launchctlFailed : message]
             )
         }
     }

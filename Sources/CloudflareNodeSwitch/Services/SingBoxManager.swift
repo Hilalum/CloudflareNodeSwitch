@@ -14,7 +14,7 @@ final class SingBoxManager: ObservableObject {
         stop()
 
         guard let executable = resolveExecutable(configuredPath: executablePath) else {
-            lastError = "sing-box was not found. Install it with: brew install sing-box"
+            lastError = LocalizedString.singBoxNotFound
             return
         }
 
@@ -47,7 +47,7 @@ final class SingBoxManager: ObservableObject {
                 self.outputPipe = nil
                 self.isRunning = false
                 if terminated.terminationStatus != 0 {
-                    self.lastError = "sing-box exited with code \(terminated.terminationStatus)."
+                    self.lastError = String(format: LocalizedString.singBoxExited, terminated.terminationStatus)
                 }
             }
         }
@@ -57,7 +57,7 @@ final class SingBoxManager: ObservableObject {
             self.process = process
             isRunning = true
             lastError = nil
-            appendLog("Started sing-box: \(executable)\n")
+            appendLog(String(format: LocalizedString.singBoxStarted, executable) + "\n")
         } catch {
             lastError = error.localizedDescription
             isRunning = false

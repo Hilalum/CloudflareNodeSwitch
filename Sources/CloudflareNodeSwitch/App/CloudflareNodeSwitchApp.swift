@@ -7,7 +7,7 @@ struct CloudflareNodeSwitchApp: App {
     @StateObject private var state = AppState()
 
     var body: some Scene {
-        WindowGroup("Cloudflare Node Switch", id: "main") {
+        WindowGroup(LocalizedString.appTitle, id: "main") {
             ContentView(state: state)
                 .frame(minWidth: 880, minHeight: 560)
                 .onAppear {
@@ -18,12 +18,12 @@ struct CloudflareNodeSwitchApp: App {
         }
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Refresh Subscription") {
+                Button(LocalizedString.refreshSubscription) {
                     state.refreshSubscription()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
 
-                Button(state.isProxyRunning ? "Stop Proxy" : "Start Proxy") {
+                Button(state.isProxyRunning ? LocalizedString.stopProxy : LocalizedString.startProxy) {
                     if state.isProxyRunning {
                         state.stopProxy()
                     } else {
@@ -37,7 +37,7 @@ struct CloudflareNodeSwitchApp: App {
         MenuBarExtra {
             MenuBarView(state: state)
         } label: {
-            Label("Node Switch", systemImage: state.isProxyRunning ? "bolt.horizontal.fill" : "bolt.horizontal")
+            Label(LocalizedString.appTitle, systemImage: state.isProxyRunning ? "bolt.horizontal.fill" : "bolt.horizontal")
         }
         .menuBarExtraStyle(.menu)
     }
@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var state: AppState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(.accessory)
         NSApp.activate(ignoringOtherApps: true)
     }
 

@@ -6,7 +6,7 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Open Window") {
+        Button(LocalizedString.openWindow) {
             if !WindowCoordinator.focusMainWindow() {
                 openWindow(id: "main")
                 WindowCoordinator.focusMainWindowSoon()
@@ -15,12 +15,7 @@ struct MenuBarView: View {
 
         Divider()
 
-        Text(state.isProxyRunning ? "Running - \(state.modeDisplayName)" : "Stopped")
-        if state.isProxyRunning {
-            Text("Current: \(state.currentNodeName)")
-        }
-
-        Button(state.isProxyRunning ? "Stop Proxy" : "Start Proxy") {
+        Button(state.isProxyRunning ? LocalizedString.stopProxy : LocalizedString.startProxy) {
             if state.isProxyRunning {
                 state.stopProxy()
             } else {
@@ -29,25 +24,15 @@ struct MenuBarView: View {
         }
         .disabled(state.nodes.isEmpty)
 
-        Button("Refresh Subscription") {
-            state.refreshSubscription()
-        }
-        .disabled(state.isRefreshing)
-
-        Button("Test Latency") {
-            state.testLatencies()
-        }
-        .disabled(state.isTesting || state.nodes.isEmpty)
-
         Toggle(isOn: Binding(
             get: { state.isProxyRunning ? state.isIntegratedProxyEnabled : state.shouldAutoEnableIntegration },
             set: { state.setIntegratedProxyEnabled($0) }
         )) {
-            Label("Integration", systemImage: "network")
+            Label(LocalizedString.integration, systemImage: "network")
         }
 
-        Menu("Open Proxied") {
-            Button("Terminal") {
+        Menu(LocalizedString.openProxied) {
+            Button(LocalizedString.terminal) {
                 state.openProxiedTerminal(command: nil)
             }
 
@@ -63,20 +48,14 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Auto Select") {
-            state.chooseAuto()
+        Button(LocalizedString.refreshSubscription) {
+            state.refreshSubscription()
         }
-
-        ForEach(state.sortedNodes.prefix(8)) { node in
-            Button(shortTitle(node.displayName)) {
-                state.choose(node: node)
-            }
-        }
+        .disabled(state.isRefreshing)
 
         Divider()
 
-        Text(state.statusMessage)
-        Button("Quit") {
+        Button(LocalizedString.quit) {
             NSApp.terminate(nil)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
@@ -84,10 +63,4 @@ struct MenuBarView: View {
         }
     }
 
-    private func shortTitle(_ value: String) -> String {
-        if value.count <= 30 {
-            return value
-        }
-        return String(value.prefix(27)) + "..."
-    }
 }

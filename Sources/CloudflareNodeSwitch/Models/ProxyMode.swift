@@ -7,9 +7,9 @@ enum ProxyMode: Codable, Equatable {
     var label: String {
         switch self {
         case .auto:
-            return "Auto"
+            return LocalizedString.auto
         case .manual:
-            return "Manual"
+            return LocalizedString.manual
         }
     }
 }

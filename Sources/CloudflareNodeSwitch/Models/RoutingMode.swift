@@ -10,22 +10,22 @@ enum RoutingMode: String, CaseIterable, Identifiable, Codable {
     var title: String {
         switch self {
         case .global:
-            return "Global"
+            return LocalizedString.globalTitle
         case .smartCN:
-            return "Smart CN"
+            return LocalizedString.smartCNTitle
         case .aiStable:
-            return "AI Stable"
+            return LocalizedString.aiStableTitle
         }
     }
 
     var detail: String {
         switch self {
         case .global:
-            return "Only LAN/private addresses are direct"
+            return LocalizedString.globalDetail
         case .smartCN:
-            return "CN/local traffic direct, others proxy"
+            return LocalizedString.smartCNDetail
         case .aiStable:
-            return "AI/GitHub/Google proxy first, CN direct"
+            return LocalizedString.aiStableDetail
         }
     }
 }

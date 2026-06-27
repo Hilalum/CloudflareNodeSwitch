@@ -6,7 +6,7 @@ enum SubscriptionParserError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noSupportedNodes:
-            return "No supported VLESS nodes were found in the subscription."
+            return LocalizedString.noSupportedNodes
         }
     }
 }
@@ -99,7 +99,7 @@ struct SubscriptionParser {
                 copy.name = "\(baseName) \(occurrence)"
             }
             if copy.name.isEmpty {
-                copy.name = "Node \(index + 1)"
+                copy.name = String(format: LocalizedString.nodeFallback, index + 1)
             }
             return copy
         }

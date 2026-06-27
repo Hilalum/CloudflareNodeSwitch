@@ -15,13 +15,27 @@ final class AppState: ObservableObject {
     }
     @Published var nodes: [ProxyNode] = []
     @Published var latencies: [UUID: NodeLatency] = [:]
+    @Published var tcpLatencies: [UUID: NodeLatency] = [:]
     @Published var mode: ProxyMode = .auto
+    @Published var appLanguage: AppLanguage {
+        didSet {
+            defaults.set(appLanguage.rawValue, forKey: Keys.appLanguage)
+            statusMessage = LocalizedString.pasteSubscriptionHint
+        }
+    }
     @Published var routingMode: RoutingMode {
         didSet {
             defaults.set(routingMode.rawValue, forKey: Keys.routingMode)
             restartIfRunning()
         }
     }
+    @Published var inboundMode: InboundMode {
+        didSet {
+            defaults.set(inboundMode.rawValue, forKey: Keys.inboundMode)
+            restartIfRunning()
+        }
+    }
+    @Published var selectedCountry: String? = nil
     @Published var isRefreshing = false
     @Published var isTesting = false
     @Published var isSystemProxyEnabled = false
@@ -30,27 +44,32 @@ final class AppState: ObservableObject {
         didSet { defaults.set(shouldAutoEnableIntegration, forKey: Keys.autoEnableIntegration) }
     }
     @Published var activeNodeID: UUID?
-    @Published var statusMessage = "Paste a subscription URL, then refresh."
+    @Published var statusMessage = LocalizedString.pasteSubscriptionHint
 
     let singBoxManager = SingBoxManager()
 
     private let defaults = UserDefaults.standard
     private let subscriptionService = SubscriptionService()
+    private let countryLookupService = CountryLookupService()
     private let systemProxyManager = SystemProxyManager()
     private let developerProxyManager = DeveloperProxyManager()
     private var cancellables: Set<AnyCancellable> = []
     private var didRefreshOnLaunch = false
     private var latencyTestTask: Task<Void, Never>?
     private var activeNodeTask: Task<Void, Never>?
-    private let clashAPIPort = 19090
+    private let clashAPIPort = SingBoxConfigBuilder.defaultClashAPIPort
 
     init() {
         subscriptionURL = defaults.string(forKey: Keys.subscriptionURL) ?? ""
         singBoxPath = defaults.string(forKey: Keys.singBoxPath) ?? ""
         let storedPort = defaults.integer(forKey: Keys.localPort)
         localPort = storedPort == 0 ? 7890 : storedPort
+        let storedLanguage = defaults.string(forKey: Keys.appLanguage) ?? AppLanguage.system.rawValue
+        appLanguage = AppLanguage(rawValue: storedLanguage) ?? .system
         let storedRouting = defaults.string(forKey: Keys.routingMode) ?? RoutingMode.aiStable.rawValue
         routingMode = RoutingMode(rawValue: storedRouting) ?? .aiStable
+        let storedInbound = defaults.string(forKey: Keys.inboundMode) ?? InboundMode.mixed.rawValue
+        inboundMode = InboundMode(rawValue: storedInbound) ?? .mixed
         if defaults.object(forKey: Keys.autoEnableIntegration) == nil {
             shouldAutoEnableIntegration = true
             defaults.set(true, forKey: Keys.autoEnableIntegration)
@@ -75,9 +94,10 @@ final class AppState: ObservableObject {
     }
 
     var sortedNodes: [ProxyNode] {
-        nodes.sorted {
-            let lhs = latencies[$0.id, default: .unknown].sortValue
-            let rhs = latencies[$1.id, default: .unknown].sortValue
+        let sortLatencies = isProxyRunning ? latencies : tcpLatencies
+        return filteredNodes.sorted {
+            let lhs = sortLatencies[$0.id, default: .unknown].sortValue
+            let rhs = sortLatencies[$1.id, default: .unknown].sortValue
             if lhs == rhs {
                 return $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
             }
@@ -85,12 +105,26 @@ final class AppState: ObservableObject {
         }
     }
 
+    var availableCountries: [String] {
+        let codes = Set(nodes.compactMap { $0.country })
+        return codes.sorted { a, b in
+            let nameA = CountryUtils.name(for: a)
+            let nameB = CountryUtils.name(for: b)
+            return nameA.localizedStandardCompare(nameB) == .orderedAscending
+        }
+    }
+
+    var filteredNodes: [ProxyNode] {
+        guard let country = selectedCountry else { return nodes }
+        return nodes.filter { $0.country == country }
+    }
+
     var modeDisplayName: String {
         switch mode {
         case .auto:
-            return "Auto"
+            return LocalizedString.auto
         case .manual:
-            return "Manual"
+            return LocalizedString.manual
         }
     }
 
@@ -102,35 +136,41 @@ final class AppState: ObservableObject {
 
         switch mode {
         case .auto:
-            return isProxyRunning ? "Detecting" : "-"
+            return isProxyRunning ? LocalizedString.detecting : "-"
         case .manual(let id):
-            return nodes.first(where: { $0.id == id })?.displayName ?? "Manual"
+            return nodes.first(where: { $0.id == id })?.displayName ?? LocalizedString.manual
         }
     }
 
     func refreshSubscription() {
         guard !subscriptionURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = "Subscription URL is empty."
+            statusMessage = LocalizedString.subscriptionEmpty
             return
         }
 
         isRefreshing = true
-        statusMessage = "Refreshing subscription..."
+        statusMessage = LocalizedString.refreshingSubscription
 
         Task {
             do {
                 let fetchedNodes = try await subscriptionService.fetch(from: subscriptionURL)
                 nodes = fetchedNodes
                 latencies = Dictionary(uniqueKeysWithValues: fetchedNodes.map { ($0.id, NodeLatency.unknown) })
+                tcpLatencies = Dictionary(uniqueKeysWithValues: fetchedNodes.map { ($0.id, NodeLatency.unknown) })
                 activeNodeID = nil
+                selectedCountry = nil
                 mode = .auto
-                statusMessage = "Loaded \(fetchedNodes.count) nodes."
+                statusMessage = String(format: LocalizedString.loadedNodes, fetchedNodes.count)
                 testLatencies()
                 if singBoxManager.isRunning {
                     try startProxy(restart: true)
                 }
+                let countryCodes = await countryLookupService.countryCodes(for: fetchedNodes)
+                for index in nodes.indices {
+                    nodes[index].countryCode = countryCodes[nodes[index].id]
+                }
             } catch {
-                statusMessage = "Refresh failed: \(error.localizedDescription)"
+                statusMessage = String(format: LocalizedString.refreshFailed, error.localizedDescription)
                 isTesting = false
             }
             isRefreshing = false
@@ -150,16 +190,16 @@ final class AppState: ObservableObject {
 
     func testLatencies() {
         guard !nodes.isEmpty else {
-            statusMessage = "No nodes to test."
+            statusMessage = LocalizedString.noNodesToTest
             return
         }
 
         latencyTestTask?.cancel()
         let nodesToTest = nodes
         isTesting = true
-        statusMessage = "Testing TCP latency..."
+        statusMessage = LocalizedString.testingTCPLatency
         for node in nodesToTest {
-            latencies[node.id] = .testing
+            tcpLatencies[node.id] = .testing
         }
 
         latencyTestTask = Task {
@@ -179,17 +219,22 @@ final class AppState: ObservableObject {
                         group.cancelAll()
                         return
                     }
-                    latencies[id] = latency
+                    tcpLatencies[id] = latency
                 }
             }
 
             guard !Task.isCancelled else {
+                isTesting = false
+                latencyTestTask = nil
                 return
             }
-            if let best = sortedNodes.first, case .alive = latencies[best.id, default: .unknown] {
-                statusMessage = "Best TCP latency: \(best.displayName)"
+            let best = filteredNodes.min {
+                tcpLatencies[$0.id, default: .unknown].sortValue < tcpLatencies[$1.id, default: .unknown].sortValue
+            }
+            if let best, case .alive = tcpLatencies[best.id, default: .unknown] {
+                statusMessage = String(format: LocalizedString.bestTCPLatency, best.displayName)
             } else {
-                statusMessage = "Latency test finished; no reachable node found."
+                statusMessage = LocalizedString.latencyTestFinished
             }
             isTesting = false
             latencyTestTask = nil
@@ -198,7 +243,7 @@ final class AppState: ObservableObject {
 
     func chooseAuto() {
         mode = .auto
-        statusMessage = "Mode set to auto."
+        statusMessage = LocalizedString.modeSetToAuto
         startActiveNodeMonitoring()
         restartIfRunning()
     }
@@ -206,17 +251,17 @@ final class AppState: ObservableObject {
     func choose(node: ProxyNode) {
         mode = .manual(node.id)
         activeNodeID = node.id
-        statusMessage = "Selected \(node.displayName)."
+        statusMessage = String(format: LocalizedString.selectedNode, node.displayName)
         restartIfRunning()
     }
 
     func startProxy(restart: Bool = false) throws {
         guard !nodes.isEmpty else {
-            statusMessage = "No nodes loaded."
+            statusMessage = LocalizedString.noNodesLoaded
             return
         }
 
-        let data = try SingBoxConfigBuilder(localPort: localPort).build(nodes: nodes, mode: mode, routingMode: routingMode)
+        let data = try SingBoxConfigBuilder(localPort: localPort).build(nodes: nodes, mode: mode, routingMode: routingMode, inboundMode: inboundMode)
         try data.write(to: AppPaths.singBoxConfigURL, options: .atomic)
         singBoxManager.start(configURL: AppPaths.singBoxConfigURL, executablePath: singBoxPath)
         if singBoxManager.isRunning {
@@ -224,7 +269,7 @@ final class AppState: ObservableObject {
             if shouldAutoEnableIntegration {
                 applyIntegratedProxy()
             }
-            statusMessage = restart ? "Proxy restarted." : "Proxy started."
+            statusMessage = restart ? LocalizedString.proxyRestarted : LocalizedString.proxyStarted
         } else if let error = singBoxManager.lastError {
             statusMessage = error
         }
@@ -234,18 +279,19 @@ final class AppState: ObservableObject {
         do {
             try startProxy()
         } catch {
-            statusMessage = "Start failed: \(error.localizedDescription)"
+            statusMessage = String(format: LocalizedString.startFailed, error.localizedDescription)
         }
     }
 
     func stopProxy() {
         stopActiveNodeMonitoring()
+        latencies = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, NodeLatency.unknown) })
         latencyTestTask?.cancel()
         latencyTestTask = nil
         isTesting = false
         cleanupIntegratedProxy()
         singBoxManager.stop()
-        statusMessage = "Proxy stopped."
+        statusMessage = LocalizedString.proxyStopped
     }
 
     func shutdown() {
@@ -259,7 +305,7 @@ final class AppState: ObservableObject {
 
     func toggleIntegratedProxy() {
         guard isProxyRunning else {
-            statusMessage = "Start the proxy before enabling integration."
+            statusMessage = LocalizedString.startProxyFirst
             return
         }
 
@@ -275,7 +321,7 @@ final class AppState: ObservableObject {
         shouldAutoEnableIntegration = enabled
         if enabled {
             guard isProxyRunning else {
-                statusMessage = "Integration will turn on automatically after Start."
+                statusMessage = LocalizedString.integrationAutoOn
                 return
             }
             if !isIntegratedProxyEnabled {
@@ -288,7 +334,7 @@ final class AppState: ObservableObject {
 
     func openProxiedTerminal(command: String?) {
         guard isProxyRunning else {
-            statusMessage = "Start the proxy before opening a proxied terminal."
+            statusMessage = LocalizedString.openTerminalFirst
             return
         }
 
@@ -298,56 +344,59 @@ final class AppState: ObservableObject {
                 applyIntegratedProxy()
             }
             try developerProxyManager.openProxiedTerminal(host: "127.0.0.1", port: localPort, command: command)
-            statusMessage = command == nil ? "Opened a proxied Terminal." : "Opened \(command!) with proxy."
+            statusMessage = command == nil ? LocalizedString.openedProxiedTerminal : String(format: LocalizedString.openedCommandWithProxy, command!)
         } catch {
-            statusMessage = "Open terminal failed: \(error.localizedDescription)"
+            statusMessage = String(format: LocalizedString.openTerminalFailed, error.localizedDescription)
         }
     }
 
     func toggleSystemProxy() {
-        Task.detached { [localPort] in
+        Task.detached { [weak self, localPort] in
+            guard let self else { return }
             do {
                 if await self.isSystemProxyEnabled {
                     try self.systemProxyManager.disable()
                     await MainActor.run {
                         self.isSystemProxyEnabled = false
-                        self.statusMessage = "System proxy disabled."
+                        self.statusMessage = LocalizedString.systemProxyDisabled
                     }
                 } else {
                     try self.systemProxyManager.enable(host: "127.0.0.1", port: localPort)
                     await MainActor.run {
                         self.isSystemProxyEnabled = true
-                        self.statusMessage = "System proxy enabled."
+                        self.statusMessage = LocalizedString.systemProxyEnabled
                     }
                 }
             } catch {
                 await MainActor.run {
-                    self.statusMessage = "System proxy failed: \(error.localizedDescription)"
+                    self.statusMessage = String(format: LocalizedString.systemProxyFailed, error.localizedDescription)
                 }
             }
         }
     }
 
     private func applyIntegratedProxy() {
-        Task.detached { [localPort] in
+        Task.detached { [weak self, localPort] in
+            guard let self else { return }
             do {
                 try self.systemProxyManager.enable(host: "127.0.0.1", port: localPort)
                 try self.developerProxyManager.enable(host: "127.0.0.1", port: localPort)
                 await MainActor.run {
                     self.isSystemProxyEnabled = true
                     self.isDeveloperProxyEnabled = true
-                    self.statusMessage = "Integrated proxy enabled for system apps and new shells."
+                    self.statusMessage = LocalizedString.integratedProxyEnabled
                 }
             } catch {
                 await MainActor.run {
-                    self.statusMessage = "Integration failed: \(error.localizedDescription)"
+                    self.statusMessage = String(format: LocalizedString.integrationFailed, error.localizedDescription)
                 }
             }
         }
     }
 
     private func disableIntegratedProxy() {
-        Task.detached {
+        Task.detached { [weak self] in
+            guard let self else { return }
             do {
                 try self.systemProxyManager.disable()
                 try self.developerProxyManager.disable()
@@ -355,11 +404,11 @@ final class AppState: ObservableObject {
                     self.isSystemProxyEnabled = false
                     self.isDeveloperProxyEnabled = false
                     self.shouldAutoEnableIntegration = false
-                    self.statusMessage = "Integrated proxy disabled."
+                    self.statusMessage = LocalizedString.integratedProxyDisabled
                 }
             } catch {
                 await MainActor.run {
-                    self.statusMessage = "Disable integration failed: \(error.localizedDescription)"
+                    self.statusMessage = String(format: LocalizedString.disableIntegrationFailed, error.localizedDescription)
                 }
             }
         }
@@ -388,33 +437,42 @@ final class AppState: ObservableObject {
         do {
             try startProxy(restart: true)
         } catch {
-            statusMessage = "Restart failed: \(error.localizedDescription)"
+            statusMessage = String(format: LocalizedString.restartFailed, error.localizedDescription)
         }
     }
 
     private func startActiveNodeMonitoring() {
         activeNodeTask?.cancel()
-
-        switch mode {
-        case .manual(let id):
+        if case .manual(let id) = mode {
             activeNodeID = id
-            activeNodeTask = nil
-        case .auto:
+        } else {
             activeNodeID = nil
-            let port = clashAPIPort
-            activeNodeTask = Task {
-                while !Task.isCancelled {
-                    do {
-                        if let tag = try await ClashAPIClient(port: port).currentOutboundTag(),
-                           let id = nodeID(forOutboundTag: tag) {
-                            activeNodeID = id
+        }
+
+        let port = clashAPIPort
+        activeNodeTask = Task {
+            while !Task.isCancelled {
+                do {
+                    let snapshot = try await ClashAPIClient(port: port).snapshot()
+                    if case .auto = mode,
+                       let tag = snapshot.currentTag,
+                       let id = nodeID(forOutboundTag: tag) {
+                        activeNodeID = id
+                    }
+                    var proxyLatencies = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, NodeLatency.failed) })
+                    for (tag, delay) in snapshot.delays {
+                        if let id = nodeID(forOutboundTag: tag) {
+                            proxyLatencies[id] = .alive(milliseconds: delay)
                         }
-                    } catch {
+                    }
+                    latencies = proxyLatencies
+                } catch {
+                    if case .auto = mode {
                         activeNodeID = nil
                     }
-
-                    try? await Task.sleep(for: .seconds(3))
                 }
+
+                try? await Task.sleep(for: .seconds(3))
             }
         }
     }
@@ -443,7 +501,9 @@ final class AppState: ObservableObject {
         static let subscriptionURL = "subscriptionURL"
         static let singBoxPath = "singBoxPath"
         static let localPort = "localPort"
+        static let appLanguage = "appLanguage"
         static let autoEnableIntegration = "autoEnableIntegration"
         static let routingMode = "routingMode"
+        static let inboundMode = "inboundMode"
     }
 }

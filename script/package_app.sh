@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="Cloudflare Node Switch"
 BUNDLE_ID="com.local.cloudflare-node-switch"
+APP_VERSION="${APP_VERSION:-2026.6.27}"
 BUILD_DIR=".build/arm64-apple-macosx/release"
 DIST_DIR="dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
@@ -63,9 +64,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>${APP_VERSION//./}</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>

@@ -15,6 +15,7 @@ struct ProxyNode: Identifiable, Codable, Hashable {
     var fingerprint: String?
     var allowInsecure: Bool
     var rawURL: String
+    var countryCode: String?
 
     init(
         id: UUID = UUID(),
@@ -30,7 +31,8 @@ struct ProxyNode: Identifiable, Codable, Hashable {
         sni: String?,
         fingerprint: String?,
         allowInsecure: Bool,
-        rawURL: String
+        rawURL: String,
+        countryCode: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -46,6 +48,7 @@ struct ProxyNode: Identifiable, Codable, Hashable {
         self.fingerprint = fingerprint
         self.allowInsecure = allowInsecure
         self.rawURL = rawURL
+        self.countryCode = countryCode
     }
 
     var endpoint: String {
@@ -54,5 +57,22 @@ struct ProxyNode: Identifiable, Codable, Hashable {
 
     var displayName: String {
         name.isEmpty ? endpoint : name
+    }
+
+    /// 国家代码（如 US、JP、HK）
+    var country: String? {
+        countryCode ?? CountryUtils.extractCountry(from: name)
+    }
+
+    /// 国家旗帜 emoji
+    var countryFlag: String {
+        guard let code = country else { return "" }
+        return CountryUtils.flag(for: code)
+    }
+
+    /// 国家显示名称
+    var countryName: String {
+        guard let code = country else { return "" }
+        return CountryUtils.name(for: code)
     }
 }

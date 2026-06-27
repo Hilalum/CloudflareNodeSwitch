@@ -7,21 +7,24 @@ enum SingBoxConfigError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyNodeList:
-            return "No nodes are available for sing-box config generation."
+            return LocalizedString.noNodesAvailable
         case .selectedNodeMissing:
-            return "The selected node is no longer available."
+            return LocalizedString.selectedNodeMissing
         }
     }
 }
 
 struct SingBoxConfigBuilder {
     var localPort: Int
-    var clashAPIPort: Int = 19090
+    var clashAPIPort: Int = SingBoxConfigBuilder.defaultClashAPIPort
     var testURL: String = "https://www.gstatic.com/generate_204"
     var testInterval: String = "3m"
-    var tolerance: Int = 150
+    var tolerance: Int = SingBoxConfigBuilder.autoSelectionTolerance
 
-    func build(nodes: [ProxyNode], mode: ProxyMode, routingMode: RoutingMode = .aiStable) throws -> Data {
+    static let defaultClashAPIPort = 19090
+    static let autoSelectionTolerance = 0
+
+    func build(nodes: [ProxyNode], mode: ProxyMode, routingMode: RoutingMode = .aiStable, inboundMode: InboundMode = .mixed) throws -> Data {
         guard !nodes.isEmpty else {
             throw SingBoxConfigError.emptyNodeList
         }
@@ -38,19 +41,49 @@ struct SingBoxConfigBuilder {
             finalTag = nodeTags[index]
         }
 
+        let inboundTag: String
+        let inbounds: [AnyEncodable]
+        switch inboundMode {
+        case .mixed:
+            inboundTag = "mixed-in"
+            inbounds = [
+                AnyEncodable(InboundConfig(
+                    type: "mixed",
+                    tag: "mixed-in",
+                    listen: "127.0.0.1",
+                    listenPort: localPort
+                ))
+            ]
+        case .tun:
+            inboundTag = "tun-in"
+            inbounds = [
+                AnyEncodable(TunInboundConfig(
+                    type: "tun",
+                    tag: "tun-in",
+                    interfaceName: "utun10",
+                    address: ["172.19.0.1/30"],
+                    autoRoute: true,
+                    strictRoute: false,
+                    stack: "system"
+                ))
+            ]
+        }
+
+        // TUN 模式需要 DNS 配置，否则 DNS 解析会失败
+        let dns: DNSConfig? = inboundMode == .tun ? DNSConfig(
+            servers: [
+                DNSServer(type: "https", tag: "dns-direct", server: "dns.google", path: "/dns-query", detour: "direct"),
+                DNSServer(type: "https", tag: "dns-proxy", server: "cloudflare-dns.com", path: "/dns-query", detour: finalTag)
+            ]
+        ) : nil
+
         let config = SingBoxConfig(
             experimental: ExperimentalConfig(
                 clashAPI: ClashAPIConfig(externalController: "127.0.0.1:\(clashAPIPort)")
             ),
             log: LogConfig(level: "warn", timestamp: true),
-            inbounds: [
-                InboundConfig(
-                    type: "mixed",
-                    tag: "mixed-in",
-                    listen: "127.0.0.1",
-                    listenPort: localPort
-                )
-            ],
+            dns: dns,
+            inbounds: inbounds,
             outbounds: [
                 AnyEncodable(UrlTestOutbound(
                     type: "urltest",
@@ -68,7 +101,8 @@ struct SingBoxConfigBuilder {
             },
             route: RouteConfig(
                 autoDetectInterface: true,
-                rules: routeRules(for: routingMode, proxyOutbound: finalTag),
+                defaultDomainResolver: inboundMode == .tun ? "dns-direct" : nil,
+                rules: routeRules(for: routingMode, proxyOutbound: finalTag, inboundTag: inboundTag),
                 final: finalTag
             )
         )
@@ -96,9 +130,9 @@ struct SingBoxConfigBuilder {
         }
     }
 
-    private func routeRules(for routingMode: RoutingMode, proxyOutbound: String) -> [RouteRule] {
+    private func routeRules(for routingMode: RoutingMode, proxyOutbound: String, inboundTag: String) -> [RouteRule] {
         var rules: [RouteRule] = [
-            RouteRule(inbound: "mixed-in", action: "sniff"),
+            RouteRule(inbound: inboundTag, action: "sniff"),
             localDirectRule()
         ]
 
@@ -117,7 +151,6 @@ struct SingBoxConfigBuilder {
 
     private func localDirectRule() -> RouteRule {
         RouteRule(
-            domain: ["localhost"],
             domainSuffix: ["local", "localhost"],
             ipIsPrivate: true,
             action: "route",
@@ -208,9 +241,22 @@ struct SingBoxConfigBuilder {
 private struct SingBoxConfig: Encodable {
     let experimental: ExperimentalConfig
     let log: LogConfig
-    let inbounds: [InboundConfig]
+    let dns: DNSConfig?
+    let inbounds: [AnyEncodable]
     let outbounds: [AnyEncodable]
     let route: RouteConfig
+}
+
+private struct DNSConfig: Encodable {
+    let servers: [DNSServer]
+}
+
+private struct DNSServer: Encodable {
+    let type: String
+    let tag: String
+    let server: String
+    let path: String
+    let detour: String
 }
 
 private struct ExperimentalConfig: Encodable {
@@ -245,6 +291,26 @@ private struct InboundConfig: Encodable {
         case tag
         case listen
         case listenPort = "listen_port"
+    }
+}
+
+private struct TunInboundConfig: Encodable {
+    let type: String
+    let tag: String
+    let interfaceName: String
+    let address: [String]
+    let autoRoute: Bool
+    let strictRoute: Bool
+    let stack: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case tag
+        case interfaceName = "interface_name"
+        case address
+        case autoRoute = "auto_route"
+        case strictRoute = "strict_route"
+        case stack
     }
 }
 
@@ -329,11 +395,13 @@ private struct TransportConfig: Encodable {
 
 private struct RouteConfig: Encodable {
     let autoDetectInterface: Bool
+    let defaultDomainResolver: String?
     let rules: [RouteRule]
     let final: String
 
     enum CodingKeys: String, CodingKey {
         case autoDetectInterface = "auto_detect_interface"
+        case defaultDomainResolver = "default_domain_resolver"
         case rules
         case final
     }

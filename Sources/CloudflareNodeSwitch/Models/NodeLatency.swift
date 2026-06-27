@@ -24,11 +24,11 @@ enum NodeLatency: Codable, Hashable {
         case .unknown:
             return "-"
         case .testing:
-            return "Testing"
+            return "..."
         case .alive(let milliseconds):
             return "\(milliseconds) ms"
         case .failed:
-            return "Failed"
+            return "×"
         }
     }
 }

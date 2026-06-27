@@ -126,14 +126,16 @@ enum CountryUtils {
         let scalars = Array(name.unicodeScalars)
         guard scalars.count >= 2 else { return nil }
 
-        let base: UInt32 = 0x1F1E6 - 65
-        let riEnd: UInt32 = 0x1F1FF // regional indicator symbol letter Z
+        let riBase: UInt32 = 0x1F1E6 // regional indicator symbol letter A
+        let riEnd: UInt32 = 0x1F1FF  // regional indicator symbol letter Z
         var codes: [Character] = []
 
         for scalar in scalars.prefix(4) { // 国旗 emoji 最多 4 个 unicode scalar
             let val = scalar.value
-            if val >= base && val <= riEnd {
-                codes.append(Character(Unicode.Scalar(val - base + 65)!))
+            if val >= riBase && val <= riEnd {
+                // val - riBase = 0 for A, 1 for B, ..., 25 for Z
+                // + 65 ('A') to get ASCII
+                codes.append(Character(Unicode.Scalar(val - riBase + 65)!))
             } else if !codes.isEmpty {
                 break
             }

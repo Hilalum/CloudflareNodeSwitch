@@ -3,97 +3,106 @@ import XCTest
 
 final class LocalizedStringTests: XCTestCase {
 
-    // MARK: - Basic Localization
+    // MARK: - Non-empty Validation
 
-    func testLocalizedStringReturnsNonEmpty() {
-        // 所有 LocalizedString 值都不应为空
-        XCTAssertFalse(LocalizedString.appTitle.isEmpty)
-        XCTAssertFalse(LocalizedString.running.isEmpty)
-        XCTAssertFalse(LocalizedString.stopped.isEmpty)
-        XCTAssertFalse(LocalizedString.autoSelect.isEmpty)
-        XCTAssertFalse(LocalizedString.nodes.isEmpty)
-        XCTAssertFalse(LocalizedString.refresh.isEmpty)
-        XCTAssertFalse(LocalizedString.start.isEmpty)
-        XCTAssertFalse(LocalizedString.stop.isEmpty)
+    func testAllCommonStringsAreNonEmpty() {
+        let strings: [(String, String)] = [
+            (LocalizedString.appTitle, "appTitle"),
+            (LocalizedString.running, "running"),
+            (LocalizedString.stopped, "stopped"),
+            (LocalizedString.autoSelect, "autoSelect"),
+            (LocalizedString.nodes, "nodes"),
+            (LocalizedString.useThisNode, "useThisNode"),
+            (LocalizedString.active, "active"),
+            (LocalizedString.refresh, "refresh"),
+            (LocalizedString.start, "start"),
+            (LocalizedString.stop, "stop"),
+            (LocalizedString.test, "test"),
+            (LocalizedString.settings, "settings"),
+            (LocalizedString.subscription, "subscription"),
+            (LocalizedString.localPort, "localPort"),
+            (LocalizedString.routing, "routing"),
+            (LocalizedString.integration, "integration"),
+            (LocalizedString.inbound, "inbound"),
+            (LocalizedString.node, "node"),
+            (LocalizedString.name, "name"),
+            (LocalizedString.endpoint, "endpoint"),
+            (LocalizedString.network, "network"),
+            (LocalizedString.country, "country"),
+            (LocalizedString.log, "log"),
+            (LocalizedString.quit, "quit"),
+        ]
+
+        for (value, name) in strings {
+            XCTAssertFalse(value.isEmpty, "\(name) should not be empty")
+        }
     }
 
     func testStatusMessagesAreNonEmpty() {
-        XCTAssertFalse(LocalizedString.pasteSubscriptionHint.isEmpty)
-        XCTAssertFalse(LocalizedString.subscriptionEmpty.isEmpty)
-        XCTAssertFalse(LocalizedString.refreshingSubscription.isEmpty)
-        XCTAssertFalse(LocalizedString.noNodesToTest.isEmpty)
-        XCTAssertFalse(LocalizedString.testingTCPLatency.isEmpty)
-        XCTAssertFalse(LocalizedString.proxyStarted.isEmpty)
-        XCTAssertFalse(LocalizedString.proxyStopped.isEmpty)
+        let strings: [(String, String)] = [
+            (LocalizedString.pasteSubscriptionHint, "pasteSubscriptionHint"),
+            (LocalizedString.subscriptionEmpty, "subscriptionEmpty"),
+            (LocalizedString.refreshingSubscription, "refreshingSubscription"),
+            (LocalizedString.noNodesToTest, "noNodesToTest"),
+            (LocalizedString.testingTCPLatency, "testingTCPLatency"),
+            (LocalizedString.proxyStarted, "proxyStarted"),
+            (LocalizedString.proxyStopped, "proxyStopped"),
+            (LocalizedString.noNodesLoaded, "noNodesLoaded"),
+        ]
+
+        for (value, name) in strings {
+            XCTAssertFalse(value.isEmpty, "\(name) should not be empty")
+        }
     }
 
-    func testSettingsStringsAreNonEmpty() {
-        XCTAssertFalse(LocalizedString.settings.isEmpty)
-        XCTAssertFalse(LocalizedString.subscription.isEmpty)
-        XCTAssertFalse(LocalizedString.subscriptionURL.isEmpty)
-        XCTAssertFalse(LocalizedString.localPort.isEmpty)
-        XCTAssertFalse(LocalizedString.routing.isEmpty)
-        XCTAssertFalse(LocalizedString.integration.isEmpty)
-        XCTAssertFalse(LocalizedString.inbound.isEmpty)
-    }
+    func testErrorMessagesAreNonEmpty() {
+        let strings: [(String, String)] = [
+            (LocalizedString.singBoxNotFound, "singBoxNotFound"),
+            (LocalizedString.noNodesAvailable, "noNodesAvailable"),
+            (LocalizedString.selectedNodeMissing, "selectedNodeMissing"),
+            (LocalizedString.noSupportedNodes, "noSupportedNodes"),
+            (LocalizedString.failedOpenTerminal, "failedOpenTerminal"),
+            (LocalizedString.launchctlFailed, "launchctlFailed"),
+        ]
 
-    func testNodeDetailStringsAreNonEmpty() {
-        XCTAssertFalse(LocalizedString.node.isEmpty)
-        XCTAssertFalse(LocalizedString.name.isEmpty)
-        XCTAssertFalse(LocalizedString.endpoint.isEmpty)
-        XCTAssertFalse(LocalizedString.network.isEmpty)
-        XCTAssertFalse(LocalizedString.tlsSNI.isEmpty)
-        XCTAssertFalse(LocalizedString.host.isEmpty)
-        XCTAssertFalse(LocalizedString.path.isEmpty)
-        XCTAssertFalse(LocalizedString.country.isEmpty)
+        for (value, name) in strings {
+            XCTAssertFalse(value.isEmpty, "\(name) should not be empty")
+        }
     }
 
     // MARK: - Format Strings
 
-    func testLoadedNodesFormatString() {
+    func testLoadedNodesFormatStringContainsArgument() {
         let result = String(format: LocalizedString.loadedNodes, 42)
         XCTAssertTrue(result.contains("42"), "Format string should contain the number")
     }
 
-    func testRefreshFailedFormatString() {
-        let result = String(format: LocalizedString.refreshFailed, "test error")
-        XCTAssertTrue(result.contains("test error"), "Format string should contain the error")
+    func testRefreshFailedFormatStringContainsArgument() {
+        let result = String(format: LocalizedString.refreshFailed, "timeout")
+        XCTAssertTrue(result.contains("timeout"), "Format string should contain the error")
     }
 
-    func testSelectedNodeFormatString() {
+    func testSelectedNodeFormatStringContainsArgument() {
         let result = String(format: LocalizedString.selectedNode, "MyNode")
         XCTAssertTrue(result.contains("MyNode"), "Format string should contain the node name")
     }
 
-    func testNodeFallbackFormatString() {
+    func testNodeFallbackFormatStringContainsArgument() {
         let result = String(format: LocalizedString.nodeFallback, 5)
         XCTAssertTrue(result.contains("5"), "Format string should contain the number")
     }
 
-    // MARK: - isChinese Property
-
-    func testIsChineseIsBool() {
-        // isChinese 应该是一个布尔值
-        let value: Bool = LocalizedString.isChinese
-        XCTAssertTrue(value == true || value == false)
+    func testSingBoxExitedFormatStringContainsArgument() {
+        let result = String(format: LocalizedString.singBoxExited, 137)
+        XCTAssertTrue(result.contains("137"), "Format string should contain exit code")
     }
 
-    // MARK: - Consistency
-
-    func testEnglishAndChineseStringsHaveSameFormatSpecifiers() {
-        // 验证格式字符串在中英文版本中有一致的格式说明符
-        let formatStrings: [(en: String, zh: String, name: String)] = [
-            (LocalizedString.loadedNodes, LocalizedString.loadedNodes, "loadedNodes"),
-        ]
-
-        // 这些字符串应该包含 %d 或 %@ 格式说明符
-        for item in formatStrings {
-            // 由于 isChinese 可能返回任一版本，我们只验证非空
-            XCTAssertFalse(item.en.isEmpty, "\(item.name) should not be empty")
-        }
+    func testCommandNotFoundFormatStringContainsArgument() {
+        let result = String(format: LocalizedString.commandNotFoundProxyActive, "codex")
+        XCTAssertTrue(result.contains("codex"), "Format string should contain command name")
     }
 
-    // MARK: - String Values
+    // MARK: - Distinctness
 
     func testProxyModeStringsAreDistinct() {
         XCTAssertNotEqual(LocalizedString.auto, LocalizedString.manual)
@@ -111,10 +120,40 @@ final class LocalizedStringTests: XCTestCase {
         XCTAssertNotEqual(LocalizedString.mixedMode, LocalizedString.tunMode)
     }
 
-    func testCountryFilterString() {
-        // Should be either Chinese or English based on locale
+    func testStatusStringsAreDistinct() {
+        XCTAssertNotEqual(LocalizedString.running, LocalizedString.stopped)
+        XCTAssertNotEqual(LocalizedString.proxyStarted, LocalizedString.proxyStopped)
+        XCTAssertNotEqual(LocalizedString.proxyStarted, LocalizedString.proxyRestarted)
+        XCTAssertNotEqual(LocalizedString.systemProxyEnabled, LocalizedString.systemProxyDisabled)
+    }
+
+    // MARK: - Localization Correctness
+
+    func testCountryFilterStringHasKnownValue() {
         let value = LocalizedString.allCountries
-        XCTAssertTrue(value == "全部" || value == "All",
-                      "Expected '全部' or 'All', got: \(value)")
+        // 根据系统语言应为中文或英文
+        XCTAssertTrue(
+            value == "全部" || value == "All",
+            "Expected '全部' (zh) or 'All' (en), got: \(value)"
+        )
+    }
+
+    func testNodeCountStringDiffersFromNodes() {
+        // nodeCount 用于指标卡片（节点数），nodes 用于列表标题（节点）
+        // 英文场景下 nodeCount 应为 "Node Count" 而非 "Nodes"
+        let count = LocalizedString.nodeCount
+        let list = LocalizedString.nodes
+        // 至少有一个不同（中文可能相同）
+        XCTAssertTrue(count != list || LocalizedString.isChinese,
+                      "nodeCount and nodes should differ in non-Chinese locales")
+    }
+
+    // MARK: - isChinese
+
+    func testIsChineseReturnsConsistentValue() {
+        // isChinese 在进程生命周期内应保持不变
+        let first = LocalizedString.isChinese
+        let second = LocalizedString.isChinese
+        XCTAssertEqual(first, second, "isChinese should be stable across calls")
     }
 }

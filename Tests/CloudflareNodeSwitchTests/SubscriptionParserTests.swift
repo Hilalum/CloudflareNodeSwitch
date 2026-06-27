@@ -51,7 +51,7 @@ final class SubscriptionParserTests: XCTestCase {
     // MARK: - URL Parameters
 
     func testParsesAllQueryParameters() throws {
-        let link = "vless://uuid@server.com:8443?encryption=none&security=reality&sni=sni.com&fp=chrome&type=grpc&serviceName=grpc&pbk=publickey&sid=shortid#Test"
+        let link = "vless://uuid@server.com:8443?encryption=none&security=reality&sni=sni.com&fp=chrome&type=grpc&host=grpc.example.com&serviceName=grpc&pbk=publickey&sid=shortid#Test"
         let nodes = try SubscriptionParser().parse(link)
 
         XCTAssertEqual(nodes.count, 1)
@@ -60,6 +60,7 @@ final class SubscriptionParserTests: XCTestCase {
         XCTAssertEqual(nodes[0].sni, "sni.com")
         XCTAssertEqual(nodes[0].fingerprint, "chrome")
         XCTAssertEqual(nodes[0].network, "grpc")
+        XCTAssertEqual(nodes[0].host, "grpc.example.com")
     }
 
     func testHandlesMissingQueryParameters() throws {
@@ -73,6 +74,22 @@ final class SubscriptionParserTests: XCTestCase {
         XCTAssertNil(nodes[0].sni)
         XCTAssertNil(nodes[0].host)
         XCTAssertNil(nodes[0].path)
+        XCTAssertNil(nodes[0].fingerprint)
+        XCTAssertFalse(nodes[0].allowInsecure)
+    }
+
+    func testExtractsHostParameter() throws {
+        let link = "vless://uuid@server.com:443?type=ws&host=cdn.example.com#WithHost"
+        let nodes = try SubscriptionParser().parse(link)
+
+        XCTAssertEqual(nodes[0].host, "cdn.example.com")
+    }
+
+    func testExtractsPathParameter() throws {
+        let link = "vless://uuid@server.com:443?type=ws&path=%2Fproxy#WithPath"
+        let nodes = try SubscriptionParser().parse(link)
+
+        XCTAssertEqual(nodes[0].path, "/proxy")
     }
 
     func testHandlesAllowInsecureVariants() throws {
@@ -124,7 +141,15 @@ final class SubscriptionParserTests: XCTestCase {
 
     func testRejectsNonVLESSContent() {
         XCTAssertThrowsError(try SubscriptionParser().parse("not a subscription")) { error in
-            XCTAssertTrue(error is SubscriptionParserError)
+            guard let parseError = error as? SubscriptionParserError else {
+                XCTFail("Expected SubscriptionParserError, got \(type(of: error))")
+                return
+            }
+            if case .noSupportedNodes = parseError {
+                // correct
+            } else {
+                XCTFail("Expected .noSupportedNodes, got \(parseError)")
+            }
         }
     }
 

@@ -16,7 +16,6 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         )
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-        // 验证 inbound
         let inbounds = json?["inbounds"] as? [[String: Any]]
         XCTAssertEqual(inbounds?.count, 1)
         XCTAssertEqual(inbounds?.first?["type"] as? String, "mixed")
@@ -24,8 +23,9 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertEqual(inbounds?.first?["listen"] as? String, "127.0.0.1")
         XCTAssertEqual(inbounds?.first?["listen_port"] as? Int, 7890)
 
-        // 验证无 DNS（mixed 模式不需要）
-        XCTAssertNil(json?["dns"])
+        // mixed 模式不应包含 dns 字段
+        let dnsKeys = json?.keys.filter { $0 == "dns" }
+        XCTAssertTrue(dnsKeys?.isEmpty ?? true, "Mixed mode should not have dns key")
 
         try assertSingBoxAccepts(data)
     }
@@ -42,7 +42,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         )
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-        // 验证 TUN inbound
+        // TUN inbound
         let inbounds = json?["inbounds"] as? [[String: Any]]
         XCTAssertEqual(inbounds?.count, 1)
         XCTAssertEqual(inbounds?.first?["type"] as? String, "tun")
@@ -53,17 +53,27 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertEqual(inbounds?.first?["strict_route"] as? Bool, false)
         XCTAssertEqual(inbounds?.first?["stack"] as? String, "system")
 
-        // 验证 DNS 配置（TUN 模式必须有）
+        // DNS 配置 — 完整验证
         let dns = json?["dns"] as? [String: Any]
         XCTAssertNotNil(dns, "TUN mode must have DNS config")
         let servers = dns?["servers"] as? [[String: Any]]
         XCTAssertEqual(servers?.count, 2)
-        // DNS server structure uses "server" field, not "address"
+
+        // 第一个 DNS 服务器
+        XCTAssertEqual(servers?.first?["type"] as? String, "https")
+        XCTAssertEqual(servers?.first?["tag"] as? String, "dns-direct")
         XCTAssertEqual(servers?.first?["server"] as? String, "dns.google")
+        XCTAssertEqual(servers?.first?["path"] as? String, "/dns-query")
         XCTAssertEqual(servers?.first?["detour"] as? String, "direct")
+
+        // 第二个 DNS 服务器
+        XCTAssertEqual(servers?[1]["type"] as? String, "https")
+        XCTAssertEqual(servers?[1]["tag"] as? String, "dns-proxy")
+        XCTAssertEqual(servers?[1]["server"] as? String, "cloudflare-dns.com")
+        XCTAssertEqual(servers?[1]["path"] as? String, "/dns-query")
         XCTAssertEqual(servers?[1]["detour"] as? String, "auto")
 
-        // 验证路由规则使用 tun-in
+        // 路由规则使用 tun-in
         let route = json?["route"] as? [String: Any]
         let rules = route?["rules"] as? [[String: Any]]
         XCTAssertEqual(rules?.first?["inbound"] as? String, "tun-in")
@@ -84,7 +94,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let rules = (json?["route"] as? [String: Any])?["rules"] as? [[String: Any]]
 
-        // Global mode: sniff + local direct only
+        // Global: sniff + local direct
         XCTAssertEqual(rules?.count, 2)
         XCTAssertEqual(rules?[0]["action"] as? String, "sniff")
         XCTAssertEqual(rules?[1]["outbound"] as? String, "direct")
@@ -122,7 +132,6 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         // AI Stable: sniff + local direct + AI proxy + CN direct
         XCTAssertEqual(rules?.count, 4)
 
-        // AI proxy rule
         let aiRule = rules?[2]
         XCTAssertEqual(aiRule?["outbound"] as? String, "auto")
         let aiDomains = aiRule?["domain_suffix"] as? [String]
@@ -142,7 +151,6 @@ final class SingBoxConfigBuilderTests: XCTestCase {
             routingMode: .global
         )
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-
         XCTAssertEqual((json?["route"] as? [String: Any])?["final"] as? String, "node-2")
     }
 
@@ -154,7 +162,17 @@ final class SingBoxConfigBuilderTests: XCTestCase {
                 mode: .manual(UUID()),
                 routingMode: .global
             )
-        )
+        ) { error in
+            guard let configError = error as? SingBoxConfigError else {
+                XCTFail("Expected SingBoxConfigError, got \(type(of: error))")
+                return
+            }
+            if case .selectedNodeMissing = configError {
+                // correct
+            } else {
+                XCTFail("Expected .selectedNodeMissing, got \(configError)")
+            }
+        }
     }
 
     // MARK: - VLESS Outbound Tests
@@ -173,6 +191,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertNotNil(vless)
         XCTAssertEqual(vless?["server"] as? String, "104.16.157.214")
         XCTAssertEqual(vless?["server_port"] as? Int, 443)
+        XCTAssertEqual(vless?["uuid"] as? String, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
         let tls = vless?["tls"] as? [String: Any]
         XCTAssertEqual(tls?["enabled"] as? Bool, true)
@@ -182,6 +201,21 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         let utls = tls?["utls"] as? [String: Any]
         XCTAssertEqual(utls?["enabled"] as? Bool, true)
         XCTAssertEqual(utls?["fingerprint"] as? String, "chrome")
+    }
+
+    func testBuildsVLESSOutboundWithTLSAndInsecure() throws {
+        let node = makeNode(security: "tls", sni: "test.com", allowInsecure: true)
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(
+            nodes: [node],
+            mode: .auto,
+            routingMode: .global
+        )
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let outbounds = json?["outbounds"] as? [[String: Any]]
+        let vless = outbounds?.first { $0["type"] as? String == "vless" }
+        let tls = vless?["tls"] as? [String: Any]
+
+        XCTAssertEqual(tls?["insecure"] as? Bool, true)
     }
 
     func testBuildsVLESSOutboundWithWebSocket() throws {
@@ -200,6 +234,36 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertEqual(transport?["path"] as? String, "/proxy")
         let headers = transport?["headers"] as? [String: String]
         XCTAssertEqual(headers?["Host"], "cdn.example.com")
+    }
+
+    func testBuildsVLESSOutboundWithWebSocketDefaultPath() throws {
+        let node = makeNode(network: "ws", host: "cdn.example.com", path: nil)
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(
+            nodes: [node],
+            mode: .auto,
+            routingMode: .global
+        )
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let outbounds = json?["outbounds"] as? [[String: Any]]
+        let vless = outbounds?.first { $0["type"] as? String == "vless" }
+
+        let transport = vless?["transport"] as? [String: Any]
+        XCTAssertEqual(transport?["path"] as? String, "/")
+    }
+
+    func testBuildsVLESSOutboundWithoutWS() throws {
+        // network = "tcp" — 不应生成 transport
+        let node = makeNode(network: "tcp", host: nil, path: nil)
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(
+            nodes: [node],
+            mode: .auto,
+            routingMode: .global
+        )
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let outbounds = json?["outbounds"] as? [[String: Any]]
+        let vless = outbounds?.first { $0["type"] as? String == "vless" }
+
+        XCTAssertNil(vless?["transport"])
     }
 
     func testBuildsVLESSOutboundWithoutTLS() throws {
@@ -233,6 +297,21 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertEqual(urltest?["interval"] as? String, "3m")
     }
 
+    func testSmartCNModeUsesDefaultTestURL() throws {
+        let node = makeNode()
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(
+            nodes: [node],
+            mode: .auto,
+            routingMode: .smartCN
+        )
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let outbounds = json?["outbounds"] as? [[String: Any]]
+        let urltest = outbounds?.first { $0["type"] as? String == "urltest" }
+
+        XCTAssertEqual(urltest?["url"] as? String, "https://www.gstatic.com/generate_204")
+        XCTAssertEqual(urltest?["interval"] as? String, "3m")
+    }
+
     func testAIStableModeUsesAITestURL() throws {
         let node = makeNode()
         let data = try SingBoxConfigBuilder(localPort: 7890).build(
@@ -248,24 +327,62 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertEqual(urltest?["interval"] as? String, "5m")
     }
 
+    // MARK: - Multiple Nodes Tests
+
+    func testBuildsConfigWithMultipleNodes() throws {
+        let nodes = (0..<5).map { makeNode(name: "Node \($0 + 1)") }
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(
+            nodes: nodes,
+            mode: .auto,
+            routingMode: .global
+        )
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let outbounds = json?["outbounds"] as? [[String: Any]]
+        let vlessOutbounds = outbounds?.filter { $0["type"] as? String == "vless" }
+
+        XCTAssertEqual(vlessOutbounds?.count, 5)
+
+        // urltest outbound 应包含所有 node tags
+        let urltest = outbounds?.first { $0["type"] as? String == "urltest" }
+        let urltestOutbounds = urltest?["outbounds"] as? [String]
+        XCTAssertEqual(urltestOutbounds, ["node-1", "node-2", "node-3", "node-4", "node-5"])
+    }
+
     // MARK: - Error Tests
 
-    func testEmptyNodeListThrows() {
+    func testEmptyNodeListThrowsEmptyNodeListError() {
         XCTAssertThrowsError(
             try SingBoxConfigBuilder(localPort: 7890).build(nodes: [], mode: .auto)
         ) { error in
-            XCTAssertTrue(error is SingBoxConfigError)
+            guard let configError = error as? SingBoxConfigError else {
+                XCTFail("Expected SingBoxConfigError, got \(type(of: error))")
+                return
+            }
+            if case .emptyNodeList = configError {
+                // correct
+            } else {
+                XCTFail("Expected .emptyNodeList, got \(configError)")
+            }
         }
     }
 
     // MARK: - Clash API Port Tests
 
-    func testClashAPIPortIsConsistent() {
-        XCTAssertEqual(
-            SingBoxConfigBuilder.defaultClashAPIPort,
-            SingBoxConfigBuilder.defaultClashAPIPort,
-            "Clash API port should be consistent"
+    func testClashAPIPortValue() {
+        XCTAssertEqual(SingBoxConfigBuilder.defaultClashAPIPort, 19090)
+    }
+
+    func testClashAPIPortAppearsInConfig() throws {
+        let node = makeNode()
+        let data = try SingBoxConfigBuilder(localPort: 7890).build(
+            nodes: [node],
+            mode: .auto,
+            routingMode: .global
         )
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let experimental = json?["experimental"] as? [String: Any]
+        let clashAPI = experimental?["clash_api"] as? [String: Any]
+        XCTAssertEqual(clashAPI?["external_controller"] as? String, "127.0.0.1:19090")
     }
 
     // MARK: - Helpers
@@ -277,7 +394,8 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         host: String? = "example.com",
         path: String? = "/?ed=2560",
         sni: String? = "example.com",
-        fingerprint: String? = "random"
+        fingerprint: String? = "random",
+        allowInsecure: Bool = false
     ) -> ProxyNode {
         ProxyNode(
             name: name,
@@ -291,7 +409,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
             path: path,
             sni: sni,
             fingerprint: fingerprint,
-            allowInsecure: false,
+            allowInsecure: allowInsecure,
             rawURL: "vless://example"
         )
     }
@@ -299,7 +417,8 @@ final class SingBoxConfigBuilderTests: XCTestCase {
     private func assertSingBoxAccepts(_ data: Data) throws {
         let candidates = ["/opt/homebrew/bin/sing-box", "/usr/local/bin/sing-box"]
         guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            return // sing-box not installed, skip validation
+            print("⚠️ sing-box not installed, skipping config validation")
+            return
         }
 
         let configURL = FileManager.default.temporaryDirectory

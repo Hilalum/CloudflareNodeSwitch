@@ -96,6 +96,20 @@ final class ProxyNodeTests: XCTestCase {
                       "Expected localized name for US, got: \(name)")
     }
 
+    func testCountryFromExplicitCountryCode() {
+        var node = makeNode(name: "Some Random Name")
+        node.countryCode = "JP"
+        XCTAssertEqual(node.country, "JP")
+        XCTAssertEqual(node.countryFlag, "🇯🇵")
+    }
+
+    func testCountryCodeTakesPriorityOverName() {
+        // countryCode 应优先于 name 中的国家代码
+        var node = makeNode(name: "US Node")
+        node.countryCode = "SG"
+        XCTAssertEqual(node.country, "SG", "countryCode should take priority over name extraction")
+    }
+
     // MARK: - Codable
 
     func testNodeCodable() throws {

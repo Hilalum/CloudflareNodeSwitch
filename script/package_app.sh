@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 APP_NAME="Cloudflare Node Switch"
 BUNDLE_ID="com.local.cloudflare-node-switch"
-APP_VERSION="${APP_VERSION:-2026.6.27}"
+APP_VERSION="${APP_VERSION:-2026.7.5}"
 BUILD_DIR=".build/arm64-apple-macosx/release"
 DIST_DIR="dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"

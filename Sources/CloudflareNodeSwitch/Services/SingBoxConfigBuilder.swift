@@ -72,8 +72,22 @@ struct SingBoxConfigBuilder {
         // TUN 模式需要 DNS 配置，否则 DNS 解析会失败
         let dns: DNSConfig? = inboundMode == .tun ? DNSConfig(
             servers: [
-                DNSServer(type: "https", tag: "dns-direct", server: "dns.google", path: "/dns-query", detour: "direct"),
-                DNSServer(type: "https", tag: "dns-proxy", server: "cloudflare-dns.com", path: "/dns-query", detour: finalTag)
+                DNSServer(
+                    type: "https",
+                    tag: "dns-direct",
+                    server: "8.8.8.8",
+                    path: "/dns-query",
+                    tls: DNSTLSConfig(serverName: "dns.google"),
+                    detour: nil
+                ),
+                DNSServer(
+                    type: "https",
+                    tag: "dns-proxy",
+                    server: "1.1.1.1",
+                    path: "/dns-query",
+                    tls: DNSTLSConfig(serverName: "cloudflare-dns.com"),
+                    detour: finalTag
+                )
             ]
         ) : nil
 
@@ -256,7 +270,16 @@ private struct DNSServer: Encodable {
     let tag: String
     let server: String
     let path: String
-    let detour: String
+    let tls: DNSTLSConfig
+    let detour: String?
+}
+
+private struct DNSTLSConfig: Encodable {
+    let serverName: String
+
+    enum CodingKeys: String, CodingKey {
+        case serverName = "server_name"
+    }
 }
 
 private struct ExperimentalConfig: Encodable {

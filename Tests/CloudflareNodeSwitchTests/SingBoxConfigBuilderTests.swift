@@ -62,16 +62,20 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         // 第一个 DNS 服务器
         XCTAssertEqual(servers?.first?["type"] as? String, "https")
         XCTAssertEqual(servers?.first?["tag"] as? String, "dns-direct")
-        XCTAssertEqual(servers?.first?["server"] as? String, "dns.google")
+        XCTAssertEqual(servers?.first?["server"] as? String, "8.8.8.8")
         XCTAssertEqual(servers?.first?["path"] as? String, "/dns-query")
-        XCTAssertEqual(servers?.first?["detour"] as? String, "direct")
+        XCTAssertNil(servers?.first?["detour"])
+        let directTLS = servers?.first?["tls"] as? [String: Any]
+        XCTAssertEqual(directTLS?["server_name"] as? String, "dns.google")
 
         // 第二个 DNS 服务器
         XCTAssertEqual(servers?[1]["type"] as? String, "https")
         XCTAssertEqual(servers?[1]["tag"] as? String, "dns-proxy")
-        XCTAssertEqual(servers?[1]["server"] as? String, "cloudflare-dns.com")
+        XCTAssertEqual(servers?[1]["server"] as? String, "1.1.1.1")
         XCTAssertEqual(servers?[1]["path"] as? String, "/dns-query")
         XCTAssertEqual(servers?[1]["detour"] as? String, "auto")
+        let proxyTLS = servers?[1]["tls"] as? [String: Any]
+        XCTAssertEqual(proxyTLS?["server_name"] as? String, "cloudflare-dns.com")
 
         // 路由规则使用 tun-in
         let route = json?["route"] as? [String: Any]
@@ -80,6 +84,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
         XCTAssertEqual(rules?.first?["action"] as? String, "sniff")
 
         try assertSingBoxAccepts(data)
+        try assertSingBoxInitializesServices(data)
     }
 
     // MARK: - Route Rules Tests
@@ -415,8 +420,7 @@ final class SingBoxConfigBuilderTests: XCTestCase {
     }
 
     private func assertSingBoxAccepts(_ data: Data) throws {
-        let candidates = ["/opt/homebrew/bin/sing-box", "/usr/local/bin/sing-box"]
-        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        guard let executable = singBoxExecutable() else {
             print("⚠️ sing-box not installed, skipping config validation")
             return
         }
@@ -437,5 +441,53 @@ final class SingBoxConfigBuilderTests: XCTestCase {
 
         let error = String(decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         XCTAssertEqual(process.terminationStatus, 0, "sing-box config validation failed: \(error)")
+    }
+
+    private func assertSingBoxInitializesServices(_ data: Data) throws {
+        guard let executable = singBoxExecutable() else {
+            return
+        }
+
+        var config = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        config.removeValue(forKey: "experimental")
+        config["inbounds"] = [[
+            "type": "mixed",
+            "tag": "tun-in",
+            "listen": "127.0.0.1",
+            "listen_port": Int.random(in: 20_000...50_000)
+        ]]
+
+        let runtimeData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+        let configURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CloudflareNodeSwitch-runtime-\(UUID().uuidString).json")
+        try runtimeData.write(to: configURL, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: configURL) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["run", "-c", configURL.path]
+        let outputPipe = Pipe()
+        process.standardError = outputPipe
+        process.standardOutput = outputPipe
+        try process.run()
+
+        Thread.sleep(forTimeInterval: 1)
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+            return
+        }
+
+        let output = String(decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        XCTFail("sing-box service initialization failed: \(output)")
+    }
+
+    private func singBoxExecutable() -> String? {
+        let candidates = [
+            "dist/Cloudflare Node Switch.app/Contents/Resources/sing-box",
+            "/opt/homebrew/bin/sing-box",
+            "/usr/local/bin/sing-box"
+        ]
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
     }
 }
